@@ -8,6 +8,7 @@ import subprocess
 import shutil
 
 from graphics import draw_counter, draw_bar_chart, draw_pie_chart, draw_timeline
+from assets import draw_icon_scene, draw_text_overlay, draw_comparison, draw_progress_bar
 
 app = FastAPI()
 
@@ -510,4 +511,104 @@ def create_timeline(
     )
 
     jobs[job_id] = {"status": "done", "output": output_path}
-    return {"job_id": job_id, "status": "done"}    
+    return {"job_id": job_id, "status": "done"}
+
+@app.post("/assets/icon")
+def create_icon(
+    icon: str = "rocket",
+    label: str = "",
+    duration: float = 2.0,
+    animation: str = "zoom",
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/icon.mp4"
+    width, height = get_resolution(aspect_ratio)
+    draw_icon_scene(
+        output_path=output_path,
+        icon_key=icon,
+        label=label,
+        duration=duration,
+        width=width,
+        height=height,
+        animation=animation,
+    )
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}
+
+@app.post("/assets/text")
+def create_text_overlay(
+    lines: str = "StoryMotion Studio,Universal Content Engine,Built for Creators",
+    duration: float = 3.0,
+    animation: str = "slideup",
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/text.mp4"
+    width, height = get_resolution(aspect_ratio)
+    draw_text_overlay(
+        output_path=output_path,
+        lines=lines.split(","),
+        duration=duration,
+        width=width,
+        height=height,
+        animation=animation,
+    )
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}
+
+@app.post("/assets/comparison")
+def create_comparison(
+    left_label: str = "Before",
+    right_label: str = "After",
+    left_value: int = 100,
+    right_value: int = 850,
+    title: str = "Comparison",
+    duration: float = 3.0,
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/comparison.mp4"
+    width, height = get_resolution(aspect_ratio)
+    draw_comparison(
+        output_path=output_path,
+        left_label=left_label,
+        right_label=right_label,
+        left_value=left_value,
+        right_value=right_value,
+        title=title,
+        duration=duration,
+        width=width,
+        height=height,
+    )
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}
+
+@app.post("/assets/progressbar")
+def create_progress_bar(
+    label: str = "Market Share",
+    percentage: int = 75,
+    duration: float = 2.0,
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/progressbar.mp4"
+    width, height = get_resolution(aspect_ratio)
+    draw_progress_bar(
+        output_path=output_path,
+        label=label,
+        percentage=percentage,
+        duration=duration,
+        width=width,
+        height=height,
+    )
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}        
