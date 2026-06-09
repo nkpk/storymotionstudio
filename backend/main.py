@@ -7,6 +7,8 @@ import os
 import subprocess
 import shutil
 
+from graphics import draw_counter, draw_bar_chart, draw_pie_chart, draw_timeline
+
 app = FastAPI()
 
 app.add_middleware(
@@ -391,3 +393,121 @@ def download(job_id: str):
         media_type="video/mp4",
         filename="storymotionstudio.mp4"
     )
+
+@app.post("/graphics/counter")
+def create_counter(
+    start: int = 0,
+    end: int = 1000000,
+    duration: float = 3.0,
+    prefix: str = "",
+    suffix: str = "",
+    label: str = "",
+    style: str = "default",
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/counter.mp4"
+    width, height = get_resolution(aspect_ratio)
+
+    draw_counter(
+        output_path=output_path,
+        start=start,
+        end=end,
+        duration=duration,
+        prefix=prefix,
+        suffix=suffix,
+        label=label,
+        style=style,
+        width=width,
+        height=height,
+    )
+
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}
+
+@app.post("/graphics/barchart")
+def create_bar_chart(
+    labels: str = "India,China,USA",
+    values: str = "1400,1410,340",
+    title: str = "",
+    duration: float = 3.0,
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/barchart.mp4"
+    width, height = get_resolution(aspect_ratio)
+
+    draw_bar_chart(
+        output_path=output_path,
+        labels=labels.split(","),
+        values=[int(v) for v in values.split(",")],
+        title=title,
+        duration=duration,
+        width=width,
+        height=height,
+    )
+
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}
+
+@app.post("/graphics/piechart")
+def create_pie_chart(
+    labels: str = "Category A,Category B,Category C",
+    values: str = "50,30,20",
+    title: str = "",
+    duration: float = 3.0,
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/piechart.mp4"
+    width, height = get_resolution(aspect_ratio)
+
+    draw_pie_chart(
+        output_path=output_path,
+        labels=labels.split(","),
+        values=[int(v) for v in values.split(",")],
+        title=title,
+        duration=duration,
+        width=width,
+        height=height,
+    )
+
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}
+
+@app.post("/graphics/timeline")
+def create_timeline(
+    events: str = '2007:iPhone,2010:Instagram,2022:ChatGPT',
+    title: str = "",
+    duration: float = 4.0,
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/timeline.mp4"
+    width, height = get_resolution(aspect_ratio)
+
+    parsed_events = []
+    for e in events.split(","):
+        parts = e.split(":")
+        if len(parts) == 2:
+            parsed_events.append({"year": parts[0], "label": parts[1]})
+
+    draw_timeline(
+        output_path=output_path,
+        events=parsed_events,
+        title=title,
+        duration=duration,
+        width=width,
+        height=height,
+    )
+
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}    
