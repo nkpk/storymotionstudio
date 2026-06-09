@@ -9,7 +9,7 @@ import shutil
 
 from graphics import draw_counter, draw_bar_chart, draw_pie_chart, draw_timeline
 from assets import draw_icon_scene, draw_text_overlay, draw_comparison, draw_progress_bar
-
+from ai import generate_script, generate_narration_text
 app = FastAPI()
 
 app.add_middleware(
@@ -612,3 +612,172 @@ def create_progress_bar(
     )
     jobs[job_id] = {"status": "done", "output": output_path}
     return {"job_id": job_id, "status": "done"}        
+
+@app.post("/ai/script")
+def create_script(
+    topic: str = "Why do airplanes survive lightning?",
+    style: str = "Science Explainer",
+    duration: int = 60,
+):
+    try:
+        script = generate_script(topic=topic, style=style, duration=duration)
+        return {"status": "done", "script": script}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.post("/ai/generate")
+def ai_generate(
+    topic: str = "Why do airplanes survive lightning?",
+    style: str = "Science Explainer",
+    duration: int = 60,
+    aspect_ratio: str = "16:9",
+):
+    try:
+        job_id = str(uuid.uuid4())
+        output_dir = f"outputs/{job_id}"
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Step 1 — Generate script
+        script = generate_script(topic=topic, style=style, duration=duration)
+        scenes = script.get("scenes", [])
+        clip_paths = []
+
+        width, height = get_resolution(aspect_ratio)
+
+        # Step 2 — Generate each scene
+        for i, scene in enumerate(scenes):
+            clip_path = f"{output_dir}/scene_{i:04d}.mp4"
+            asset_type = scene.get("asset_type", "graphic")
+            graphic_type = scene.get("graphic_type")
+            graphic_data = scene.get("graphic_data", {})
+            scene_duration = scene.get("duration", 5)
+
+            if asset_type == "graphic" and graphic_type:
+                if graphic_type == "counter":
+                    draw_counter(
+                        output_path=clip_path,
+                        start=graphic_data.get("start", 0),
+                        end=graphic_data.get("end", 1000000),
+                        duration=scene_duration,
+                        prefix=graphic_data.get("prefix", ""),
+                        suffix=graphic_data.get("suffix", ""),
+                        label=graphic_data.get("label", ""),
+                        width=width,
+                        height=height,
+                    )
+                elif graphic_type == "barchart":
+                    draw_bar_chart(
+                        output_path=clip_path,
+                        labels=graphic_data.get("labels", "A,B,C").split(","),
+                        values=[int(v) for v in graphic_data.get("values", "100,200,300").split(",")],
+                        title=graphic_data.get("title", ""),
+                        duration=scene_duration,
+                        width=width,
+                        height=height,
+                    )
+                elif graphic_type == "piechart":
+                    draw_pie_chart(
+                        output_path=clip_path,
+                        labels=graphic_data.get("labels", "A,B,C").split(","),
+                        values=[int(v) for v in graphic_data.get("values", "50,30,20").split(",")],
+                        title=graphic_data.get("title", ""),
+                        duration=scene_duration,
+                        width=width,
+                        height=height,
+                    )
+                elif graphic_type == "timeline":
+                    events_raw = graphic_data.get("events", "2020:Event")
+                    parsed_events = []
+                    for e in events_raw.split(","):
+                        parts = e.split(":")
+                        if len(parts) == 2:
+                            parsed_events.append({"year": parts[0], "label": parts[1]})
+                    draw_timeline(
+                        output_path=clip_path,
+                        events=parsed_events,
+                        title=graphic_data.get("title", ""),
+                        duration=scene_duration,
+                        width=width,
+                        height=height,
+                    )
+                elif graphic_type == "text":
+                    draw_text_overlay(
+                        output_path=clip_path,
+                        lines=graphic_data.get("lines", "Text").split(","),
+                        duration=scene_duration,
+                        width=width,
+                        height=height,
+                    )
+                elif graphic_type == "progressbar":
+                    draw_progress_bar(
+                        output_path=clip_path,
+                        label=graphic_data.get("label", "Progress"),
+                        percentage=int(graphic_data.get("percentage", 75)),
+                        duration=scene_duration,
+                        width=width,
+                        height=height,
+                    )
+                elif graphic_type == "icon":
+                    draw_icon_scene(
+                        output_path=clip_path,
+                        icon_key=graphic_data.get("icon", "star"),
+                        label=graphic_data.get("label", ""),
+                        duration=scene_duration,
+                        width=width,
+                        height=height,
+                    )
+                else:
+                    draw_text_overlay(
+                        output_path=clip_path,
+                        lines=[scene.get("visual", "Scene")],
+                        duration=scene_duration,
+                        width=width,
+                        height=height,
+                    )
+            else:
+                draw_text_overlay(
+                    output_path=clip_path,
+                    lines=[scene.get("visual", "Scene")],
+                    duration=scene_duration,
+                    width=width,
+                    height=height,
+                )
+
+            clip_paths.append(clip_path)
+
+        # Step 3 — Concatenate all scenes
+        if len(clip_paths) == 1:
+            final_video = clip_paths[0]
+        else:
+            concat_file = f"{output_dir}/concat.txt"
+            with open(concat_file, "w") as f:
+                for cp in clip_paths:
+                    f.write(f"file '{cp}'\n")
+
+            final_video = f"{output_dir}/video.mp4"
+            subprocess.run([
+                "ffmpeg", "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_file,
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                final_video
+            ], check=True, capture_output=True)
+
+        jobs[job_id] = {
+            "status": "done",
+            "output": final_video,
+            "script": script,
+            "progress": 100,
+        }
+
+        return {
+            "job_id": job_id,
+            "status": "done",
+            "title": script.get("title", ""),
+            "scenes": len(scenes),
+        }
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
