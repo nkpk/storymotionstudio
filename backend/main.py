@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from typing import List, Optional
@@ -38,14 +38,44 @@ def get_zoom_filter(intensity: str, width: int, height: int):
     }
     return zooms.get(intensity, zooms["Medium Motion"])
 
-def get_caption_style(style: str, position: str, caption_type: str):
+def get_style_filter(style: str):
+    filters = {
+        "Horror Cinematic": (
+            "curves=vintage,"
+            "colorchannelmixer=rr=1.3:rg=0:rb=0:gr=0:gg=0.7:gb=0:br=0:bg=0:bb=0.7,"
+            "vignette=PI/4,"
+            "noise=alls=8:allf=t"
+        ),
+        "Anime Recap": (
+            "eq=saturation=1.8:contrast=1.2:brightness=0.05,"
+            "unsharp=5:5:1.5:5:5:0.0"
+        ),
+        "Documentary": (
+            "eq=saturation=0.85:contrast=1.1:brightness=0.0,"
+            "curves=psych"
+        ),
+        "Science Explainer": (
+            "eq=saturation=1.2:contrast=1.15:brightness=0.05,"
+            "colorchannelmixer=rr=0.8:rg=0:rb=0:gr=0:gg=0.9:gb=0:br=0:bg=0:bb=1.3"
+        ),
+        "Luxury Storytelling": (
+            "eq=saturation=0.9:contrast=1.05:brightness=0.02,"
+            "colorchannelmixer=rr=1.1:rg=0:rb=0:gr=0:gg=0.95:gb=0:br=0:bg=0:bb=0.8"
+        ),
+        "Viral Shorts": (
+            "eq=saturation=1.6:contrast=1.3:brightness=0.05,"
+            "unsharp=3:3:1.0:3:3:0.0"
+        ),
+    }
+    return filters.get(style, "eq=saturation=1.0")
+
+def get_caption_style(style: str, position: str):
     positions = {
         "top": "Alignment=8",
         "center": "Alignment=5",
         "bottom": "Alignment=2",
     }
     align = positions.get(position, "Alignment=2")
-
     styles = {
         "Horror Cinematic": f"FontName=Arial,FontSize=24,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,{align}",
         "Anime Recap": f"FontName=Arial,FontSize=28,PrimaryColour=&H00FFFFFF,OutlineColour=&H000000FF,BorderStyle=1,Outline=3,{align}",
@@ -78,32 +108,24 @@ def generate_captions(audio_path: str, output_dir: str, caption_type: str):
                 end = segment["end"]
                 text = segment["text"].strip()
 
+                def to_srt_time(seconds):
+                    h = int(seconds // 3600)
+                    m = int((seconds % 3600) // 60)
+                    s = int(seconds % 60)
+                    ms = int((seconds % 1) * 1000)
+                    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
                 if caption_type == "word":
                     words = text.split()
                     word_duration = (end - start) / max(len(words), 1)
                     for j, word in enumerate(words):
                         w_start = start + j * word_duration
                         w_end = w_start + word_duration
-
-                        def to_srt_time(seconds):
-                            h = int(seconds // 3600)
-                            m = int((seconds % 3600) // 60)
-                            s = int(seconds % 60)
-                            ms = int((seconds % 1) * 1000)
-                            return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
                         f.write(f"{counter}\n")
                         f.write(f"{to_srt_time(w_start)} --> {to_srt_time(w_end)}\n")
                         f.write(f"{word}\n\n")
                         counter += 1
                 else:
-                    def to_srt_time(seconds):
-                        h = int(seconds // 3600)
-                        m = int((seconds % 3600) // 60)
-                        s = int(seconds % 60)
-                        ms = int((seconds % 1) * 1000)
-                        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
                     f.write(f"{counter}\n")
                     f.write(f"{to_srt_time(start)} --> {to_srt_time(end)}\n")
                     f.write(f"{text}\n\n")
@@ -230,11 +252,13 @@ def generate(
         if audio_path:
             srt_path = generate_captions(audio_path, output_dir, caption_type)
 
-        # Step 4 — Create clips
+        # Step 4 — Create clips with zoom + style filter
         jobs[job_id]["progress"] = 50
         clips_dir = f"uploads/{job_id}/clips"
         os.makedirs(clips_dir, exist_ok=True)
         zoom_filter = get_zoom_filter(intensity, width, height)
+        style_filter = get_style_filter(style)
+        combined_filter = f"{zoom_filter},{style_filter}"
 
         for i in range(len(images)):
             clip_path = f"{clips_dir}/{i:04d}.mp4"
@@ -242,7 +266,7 @@ def generate(
                 "ffmpeg", "-y",
                 "-loop", "1",
                 "-i", f"{resized_dir}/{i:04d}.jpg",
-                "-vf", zoom_filter,
+                "-vf", combined_filter,
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
                 "-t", str(duration),
@@ -283,12 +307,11 @@ def generate(
             ]
             subprocess.run(cmd, check=True, capture_output=True)
 
-        # Step 6 — Mix audio + music with ducking
+        # Step 6 — Mix audio + music
         jobs[job_id]["progress"] = 75
         audio_video = f"{output_dir}/with_audio.mp4"
 
         if audio_path and music_path:
-            # Auto ducking — music lowers when narration plays
             subprocess.run([
                 "ffmpeg", "-y",
                 "-i", concat_video,
@@ -330,7 +353,7 @@ def generate(
         jobs[job_id]["progress"] = 90
         output_path = f"{output_dir}/video.mp4"
         if srt_path and os.path.exists(srt_path):
-            caption_style = get_caption_style(style, caption_position, caption_type)
+            caption_style = get_caption_style(style, caption_position)
             subprocess.run([
                 "ffmpeg", "-y",
                 "-i", audio_video,
