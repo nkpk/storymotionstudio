@@ -1,0 +1,8 @@
+file '/workspaces/storymotionstudio/backend/outputs/64c18a41-1912-4dea-9d76-f2db67b8ff2d/scene_0000.mp4'
+file '/workspaces/storymotionstudio/backend/outputs/64c18a41-1912-4dea-9d76-f2db67b8ff2d/scene_0001.mp4'
+file '/workspaces/storymotionstudio/backend/outputs/64c18a41-1912-4dea-9d76-f2db67b8ff2d/scene_0002.mp4'
+file '/workspaces/storymotionstudio/backend/outputs/64c18a41-1912-4dea-9d76-f2db67b8ff2d/scene_0003.mp4'
+file '/workspaces/storymotionstudio/backend/outputs/64c18a41-1912-4dea-9d76-f2db67b8ff2d/scene_0004.mp4'
+file '/workspaces/storymotionstudio/backend/outputs/64c18a41-1912-4dea-9d76-f2db67b8ff2d/scene_0005.mp4'
+file '/workspaces/storymotionstudio/backend/outputs/64c18a41-1912-4dea-9d76-f2db67b8ff2d/scene_0006.mp4'
+file '/workspaces/storymotionstudio/backend/outputs/64c18a41-1912-4dea-9d76-f2db67b8ff2d/scene_0007.mp4'

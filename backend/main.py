@@ -10,6 +10,8 @@ import shutil
 from graphics import draw_counter, draw_bar_chart, draw_pie_chart, draw_timeline
 from assets import draw_icon_scene, draw_text_overlay, draw_comparison, draw_progress_bar
 from ai import generate_script, generate_narration_text
+from hf_images import generate_image
+
 app = FastAPI()
 
 app.add_middleware(
@@ -637,22 +639,59 @@ def ai_generate(
         output_dir = f"outputs/{job_id}"
         os.makedirs(output_dir, exist_ok=True)
 
+        jobs[job_id] = {"status": "processing", "progress": 5}
+
         # Step 1 — Generate script
         script = generate_script(topic=topic, style=style, duration=duration)
         scenes = script.get("scenes", [])
         clip_paths = []
 
         width, height = get_resolution(aspect_ratio)
+        jobs[job_id]["progress"] = 15
+
+        total_scenes = len(scenes)
 
         # Step 2 — Generate each scene
         for i, scene in enumerate(scenes):
             clip_path = f"{output_dir}/scene_{i:04d}.mp4"
             asset_type = scene.get("asset_type", "graphic")
             graphic_type = scene.get("graphic_type")
-            graphic_data = scene.get("graphic_data", {})
+            graphic_data = scene.get("graphic_data", {}) or {}
             scene_duration = scene.get("duration", 5)
 
-            if asset_type == "graphic" and graphic_type:
+            jobs[job_id]["progress"] = 15 + int((i / max(total_scenes, 1)) * 70)
+
+            if asset_type == "image":
+                # Generate AI image for this scene
+                img_path = f"{output_dir}/scene_{i:04d}.png"
+                visual_prompt = scene.get("visual", scene.get("narration", topic))
+                result = generate_image(visual_prompt, img_path, style=style)
+
+                if result and os.path.exists(img_path):
+                    # Resize and apply zoom + style filter
+                    zoom_filter = get_zoom_filter("Medium Motion", width, height)
+                    style_filter = get_style_filter(style)
+                    subprocess.run([
+                        "ffmpeg", "-y",
+                        "-loop", "1",
+                        "-i", img_path,
+                        "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,{zoom_filter},{style_filter}",
+                        "-c:v", "libx264",
+                        "-pix_fmt", "yuv420p",
+                        "-t", str(scene_duration),
+                        clip_path
+                    ], check=True, capture_output=True)
+                else:
+                    # Fallback to text overlay if image generation fails
+                    draw_text_overlay(
+                        output_path=clip_path,
+                        lines=[scene.get("visual", "Scene")],
+                        duration=scene_duration,
+                        width=width,
+                        height=height,
+                    )
+
+            elif asset_type == "graphic" and graphic_type:
                 if graphic_type == "counter":
                     draw_counter(
                         output_path=clip_path,
@@ -668,8 +707,8 @@ def ai_generate(
                 elif graphic_type == "barchart":
                     draw_bar_chart(
                         output_path=clip_path,
-                        labels=graphic_data.get("labels", "A,B,C").split(","),
-                        values=[int(v) for v in graphic_data.get("values", "100,200,300").split(",")],
+                        labels=str(graphic_data.get("labels", "A,B,C")).split(","),
+                        values=[int(v) for v in str(graphic_data.get("values", "100,200,300")).split(",")],
                         title=graphic_data.get("title", ""),
                         duration=scene_duration,
                         width=width,
@@ -678,15 +717,15 @@ def ai_generate(
                 elif graphic_type == "piechart":
                     draw_pie_chart(
                         output_path=clip_path,
-                        labels=graphic_data.get("labels", "A,B,C").split(","),
-                        values=[int(v) for v in graphic_data.get("values", "50,30,20").split(",")],
+                        labels=str(graphic_data.get("labels", "A,B,C")).split(","),
+                        values=[int(v) for v in str(graphic_data.get("values", "50,30,20")).split(",")],
                         title=graphic_data.get("title", ""),
                         duration=scene_duration,
                         width=width,
                         height=height,
                     )
                 elif graphic_type == "timeline":
-                    events_raw = graphic_data.get("events", "2020:Event")
+                    events_raw = str(graphic_data.get("events", "2020:Event"))
                     parsed_events = []
                     for e in events_raw.split(","):
                         parts = e.split(":")
@@ -703,7 +742,7 @@ def ai_generate(
                 elif graphic_type == "text":
                     draw_text_overlay(
                         output_path=clip_path,
-                        lines=graphic_data.get("lines", "Text").split(","),
+                        lines=str(graphic_data.get("lines", "Text")).split(","),
                         duration=scene_duration,
                         width=width,
                         height=height,
@@ -745,16 +784,18 @@ def ai_generate(
 
             clip_paths.append(clip_path)
 
+        jobs[job_id]["progress"] = 88
+
         # Step 3 — Concatenate all scenes
         if len(clip_paths) == 1:
-            final_video = clip_paths[0]
+            concat_video = clip_paths[0]
         else:
             concat_file = f"{output_dir}/concat.txt"
             with open(concat_file, "w") as f:
                 for cp in clip_paths:
-                    f.write(f"file '{cp}'\n")
+                    f.write(f"file '{os.path.abspath(cp)}'\n")
 
-            final_video = f"{output_dir}/video.mp4"
+            concat_video = f"{output_dir}/concat.mp4"
             subprocess.run([
                 "ffmpeg", "-y",
                 "-f", "concat",
@@ -762,8 +803,14 @@ def ai_generate(
                 "-i", concat_file,
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
-                final_video
+                concat_video
             ], check=True, capture_output=True)
+
+        jobs[job_id]["progress"] = 95
+
+        # Step 4 — Add narration voice if needed (TTS) — skipped for now, silent video
+        final_video = f"{output_dir}/video.mp4"
+        shutil.copy(concat_video, final_video)
 
         jobs[job_id] = {
             "status": "done",
@@ -780,4 +827,5 @@ def ai_generate(
         }
 
     except Exception as e:
+        jobs[job_id] = {"status": "error", "error": str(e)}
         return {"status": "error", "error": str(e)}
