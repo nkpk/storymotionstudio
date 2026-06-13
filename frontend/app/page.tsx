@@ -26,6 +26,12 @@ const CAPTION_TYPES = [
 
 export default function Home() {
   const [step, setStep] = useState(1);
+  const [mode, setMode] = useState<"upload" | "ai">("upload");
+  const [aiTopic, setAiTopic] = useState("");
+  const [aiJobId, setAiJobId] = useState("");
+  const [aiStatus, setAiStatus] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiTitle, setAiTitle] = useState("");
   const [selectedStyle, setSelectedStyle] = useState("horror");
   const [selectedIntensity, setSelectedIntensity] = useState(2);
   const [selectedRatio, setSelectedRatio] = useState("16:9");
@@ -111,12 +117,63 @@ export default function Home() {
     transition: "all 0.2s",
   });
 
+  const handleAiGenerate = async () => {
+    if (!aiTopic.trim()) { alert("Enter a topic"); return; }
+    setAiLoading(true);
+    setAiStatus("generating");
+    try {
+      const style = STYLES.find(s => s.id === selectedStyle)?.label || "Science Explainer";
+      const res = await fetch(
+        `${API}/ai/generate?topic=${encodeURIComponent(aiTopic)}&style=${encodeURIComponent(style)}&duration=60&aspect_ratio=${encodeURIComponent(selectedRatio)}`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      const jid = data.job_id;
+      setAiJobId(jid);
+
+      const poll = setInterval(async () => {
+        try {
+          const sres = await fetch(`${API}/status/${jid}`);
+          const sdata = await sres.json();
+          if (sdata.status === "done") {
+            clearInterval(poll);
+            setAiTitle(sdata.title || "Your Video");
+            setAiStatus("done");
+            setAiLoading(false);
+          } else if (sdata.status === "error") {
+            clearInterval(poll);
+            setAiStatus("error");
+            setAiLoading(false);
+          }
+        } catch {}
+      }, 3000);
+    } catch {
+      setAiStatus("error");
+      setAiLoading(false);
+    }
+  };
+  
   return (
     <main style={{ minHeight: "100vh", background: "#090909", color: "#fff", fontFamily: "sans-serif" }}>
 
       {/* NAV */}
-      <nav style={{ padding: "16px 24px", borderBottom: "1px solid #ffffff11", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#09090988", backdropFilter: "blur(20px)", position: "sticky", top: 0, zIndex: 100 }}>
+      <nav style={{ padding: "16px 24px", borderBottom: "1px solid #ffffff11", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#09090988", backdropFilter: "blur(20px)", position: "sticky", top: 0, zIndex: 100, flexWrap: "wrap", gap: "10px" }}>
         <div style={{ color: "#e8c97e", fontSize: "18px", fontWeight: "bold" }}>▶ StoryMotion Studio</div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={() => setMode("upload")} style={{
+            background: mode === "upload" ? "#e8c97e" : "#ffffff11",
+            color: mode === "upload" ? "#000" : "#ffffff66",
+            border: "none", borderRadius: "8px", padding: "8px 16px",
+            fontSize: "13px", fontWeight: "600", cursor: "pointer"
+          }}>📁 Upload Mode</button>
+          <button onClick={() => setMode("ai")} style={{
+            background: mode === "ai" ? "#e8c97e" : "#ffffff11",
+            color: mode === "ai" ? "#000" : "#ffffff66",
+            border: "none", borderRadius: "8px", padding: "8px 16px",
+            fontSize: "13px", fontWeight: "600", cursor: "pointer"
+          }}>✦ AI Text-to-Video</button>
+        </div>
+        {mode === "upload" && (
         <div style={{ display: "flex", gap: "6px" }}>
           {[1, 2, 3, 4].map(n => (
             <div key={n} onClick={() => setStep(n)} style={{
@@ -128,7 +185,98 @@ export default function Home() {
             }}>{n}</div>
           ))}
         </div>
+        )}
       </nav>
+ 
+      {mode === "ai" && (
+        <div style={{ maxWidth: "560px", margin: "0 auto", padding: "40px 20px", textAlign: "center" }}>
+          <h1 style={{ fontSize: "2rem", fontWeight: "900", marginBottom: "8px" }}>AI Text-to-Video</h1>
+          <p style={{ color: "#ffffff55", marginBottom: "28px" }}>Just type a topic — AI writes the script, plans scenes, and generates the video</p>
+
+          <textarea
+            value={aiTopic}
+            onChange={(e) => setAiTopic(e.target.value)}
+            placeholder="e.g. Why do airplanes survive lightning?"
+            style={{
+              width: "100%", minHeight: "100px", background: "#0d0d0d",
+              border: "1px solid #ffffff22", borderRadius: "12px",
+              padding: "16px", color: "#fff", fontSize: "15px",
+              marginBottom: "20px", fontFamily: "sans-serif", resize: "vertical"
+            }}
+          />
+
+          {/* Style selector for AI mode */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "20px" }}>
+            {STYLES.map(s => (
+              <div key={s.id} onClick={() => setSelectedStyle(s.id)} style={{
+                border: `1px solid ${selectedStyle === s.id ? s.color : "#ffffff11"}`,
+                borderRadius: "10px", padding: "12px 8px", cursor: "pointer", textAlign: "center",
+                background: selectedStyle === s.id ? s.glow : "transparent",
+              }}>
+                <div style={{ fontSize: "20px", marginBottom: "4px" }}>{s.icon}</div>
+                <div style={{ fontSize: "10px", color: selectedStyle === s.id ? "#fff" : "#ffffff55" }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Aspect ratio */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "28px" }}>
+            {ASPECT_RATIOS.map(r => (
+              <div key={r.id} onClick={() => setSelectedRatio(r.id)} style={{
+                border: `1px solid ${selectedRatio === r.id ? "#e8c97e" : "#ffffff11"}`,
+                borderRadius: "10px", padding: "10px", cursor: "pointer", textAlign: "center",
+                background: selectedRatio === r.id ? "#e8c97e18" : "transparent",
+              }}>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: selectedRatio === r.id ? "#e8c97e" : "#fff" }}>{r.label}</div>
+                <div style={{ fontSize: "10px", color: "#ffffff44" }}>{r.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ border: "1px solid #ffffff11", borderRadius: "16px", padding: "32px 20px", marginBottom: "20px" }}>
+            {aiStatus === "done" ? (
+              <>
+                <div style={{ fontSize: "48px", marginBottom: "16px" }}>🎉</div>
+                <div style={{ fontSize: "18px", color: "#e8c97e", marginBottom: "8px", fontWeight: "bold" }}>{aiTitle}</div>
+                <div style={{ fontSize: "13px", color: "#ffffff44", marginBottom: "20px" }}>Video generated successfully</div>
+                <button onClick={() => window.open(`${API}/download/${aiJobId}`)} style={{
+                  background: "linear-gradient(135deg, #e8c97e, #c9973e)", border: "none",
+                  borderRadius: "10px", padding: "14px 32px", color: "#000",
+                  fontWeight: "700", fontSize: "15px", cursor: "pointer"
+                }}>⬇ Download MP4</button>
+              </>
+            ) : aiStatus === "error" ? (
+              <>
+                <div style={{ fontSize: "48px", marginBottom: "16px" }}>❌</div>
+                <div style={{ fontSize: "16px", color: "#ff4444" }}>Generation failed. Try again.</div>
+              </>
+            ) : aiLoading ? (
+              <>
+                <div style={{ fontSize: "16px", color: "#ffffff88", marginBottom: "12px" }}>
+                  AI is writing your script and generating scenes...
+                </div>
+                <div style={{ fontSize: "12px", color: "#ffffff44" }}>This takes 30-60 seconds</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: "40px", marginBottom: "12px" }}>✦</div>
+                <div style={{ fontSize: "14px", color: "#ffffff55" }}>Enter a topic and click Generate</div>
+              </>
+            )}
+          </div>
+
+          {aiStatus !== "done" && !aiLoading && (
+            <button onClick={handleAiGenerate} style={{
+              width: "100%", background: "linear-gradient(135deg, #e8c97e, #c9973e)",
+              border: "none", borderRadius: "12px", padding: "16px",
+              color: "#000", fontWeight: "700", fontSize: "16px", cursor: "pointer"
+            }}>✦ Generate Video from Text</button>
+          )}
+        </div>
+      )}
+
+      {mode === "upload" && (
+      <>
 
       {/* STEP 1 — UPLOAD */}
       {step === 1 && (
@@ -375,7 +523,9 @@ export default function Home() {
               )}
             </div>
           )}
-        </div>
+         </div>
+      )}
+      </>
       )}
     </main>
   );

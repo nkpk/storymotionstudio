@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from typing import List, Optional
@@ -11,6 +11,7 @@ from graphics import draw_counter, draw_bar_chart, draw_pie_chart, draw_timeline
 from assets import draw_icon_scene, draw_text_overlay, draw_comparison, draw_progress_bar
 from ai import generate_script, generate_narration_text
 from hf_images import generate_image
+from characters import draw_character_scene
 
 app = FastAPI()
 
@@ -629,17 +630,21 @@ def create_script(
 
 @app.post("/ai/generate")
 def ai_generate(
+    background_tasks: BackgroundTasks,
     topic: str = "Why do airplanes survive lightning?",
     style: str = "Science Explainer",
     duration: int = 60,
     aspect_ratio: str = "16:9",
 ):
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {"status": "processing", "progress": 0}
+    background_tasks.add_task(run_ai_generate, job_id, topic, style, duration, aspect_ratio)
+    return {"job_id": job_id, "status": "processing"}
+
+def run_ai_generate(job_id, topic, style, duration, aspect_ratio):
     try:
-        job_id = str(uuid.uuid4())
         output_dir = f"outputs/{job_id}"
         os.makedirs(output_dir, exist_ok=True)
-
-        jobs[job_id] = {"status": "processing", "progress": 5}
 
         # Step 1 — Generate script
         script = generate_script(topic=topic, style=style, duration=duration)
@@ -817,15 +822,31 @@ def ai_generate(
             "output": final_video,
             "script": script,
             "progress": 100,
-        }
-
-        return {
-            "job_id": job_id,
-            "status": "done",
             "title": script.get("title", ""),
-            "scenes": len(scenes),
         }
 
     except Exception as e:
         jobs[job_id] = {"status": "error", "error": str(e)}
-        return {"status": "error", "error": str(e)}
+
+@app.post("/assets/character")
+def create_character(
+    action: str = "wave",
+    label: str = "",
+    duration: float = 3.0,
+    aspect_ratio: str = "16:9",
+):
+    job_id = str(uuid.uuid4())
+    output_dir = f"outputs/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/character.mp4"
+    width, height = get_resolution(aspect_ratio)
+    draw_character_scene(
+        output_path=output_path,
+        action=action,
+        label=label,
+        duration=duration,
+        width=width,
+        height=height,
+    )
+    jobs[job_id] = {"status": "done", "output": output_path}
+    return {"job_id": job_id, "status": "done"}
