@@ -24,25 +24,63 @@ app.add_middleware(
 
 jobs = {}
 
-def get_transition(style: str):
-    transitions = {
-        "Horror Cinematic": "fade",
-        "Anime Recap": "wipeleft",
-        "Documentary": "fade",
-        "Science Explainer": "wipeup",
-        "Luxury Storytelling": "fadeblack",
-        "Viral Shorts": "slideleft",
-    }
-    return transitions.get(style, "fade")
+# ── ALL FFmpeg xfade transitions (50+) ──
+ALL_TRANSITIONS = [
+    "fade", "fadeblack", "fadewhite", "fadegrays", "dissolve", "distance",
+    "wipeleft", "wiperight", "wipeup", "wipedown",
+    "wipetl", "wipetr", "wipebl", "wipebr",
+    "slideleft", "slideright", "slideup", "slidedown",
+    "smoothleft", "smoothright", "smoothup", "smoothdown",
+    "circlecrop", "rectcrop", "circleopen", "circleclose",
+    "horzopen", "horzclose", "vertopen", "vertclose",
+    "diagbl", "diagbr", "diagtl", "diagtr",
+    "hlslice", "hrslice", "vuslice", "vdslice",
+    "pixelize", "radial", "hblur",
+    "squeezeh", "squeezev", "zoomin",
+    "hlwind", "hrwind", "vuwind", "vdwind",
+    "coverleft", "coverright", "coverup", "coverdown",
+    "revealleft", "revealright", "revealup", "revealdown",
+]
 
-def get_zoom_filter(intensity: str, width: int, height: int):
-    zooms = {
-        "Low Motion": f"zoompan=z='min(zoom+0.0005,1.1)':d=125:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height},fps=25",
-        "Medium Motion": f"zoompan=z='min(zoom+0.001,1.2)':d=125:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height},fps=25",
-        "High Motion": f"zoompan=z='min(zoom+0.0015,1.3)':d=125:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height},fps=25",
-        "Cinematic": f"zoompan=z='min(zoom+0.001,1.2)':d=125:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height},fps=25",
+# ── ALL camera movements (8 variants) ──
+CAMERA_MOVEMENTS = [
+    "zoomin", "zoomout", "panleft", "panright",
+    "panup", "pandown", "diagonal_tl_br", "diagonal_tr_bl",
+]
+
+def get_transition(style: str, index: int = 0):
+    transition_sets = {
+        "Horror Cinematic": ["fade", "fadeblack", "fadegrays", "dissolve", "pixelize", "distance", "hblur", "radial"],
+        "Anime Recap": ["wipeleft", "wiperight", "slideleft", "slideright", "circlecrop", "rectcrop", "zoomin", "diagtl"],
+        "Documentary": ["fade", "dissolve", "smoothleft", "smoothright", "fade", "smoothup", "smoothdown", "fade"],
+        "Science Explainer": ["wipeup", "wipedown", "slideup", "slidedown", "circleopen", "radial", "vertopen", "horzopen"],
+        "Luxury Storytelling": ["fadeblack", "fadewhite", "dissolve", "smoothup", "smoothdown", "fade", "circleclose", "fadegrays"],
+        "Viral Shorts": ["slideleft", "slideright", "slideup", "slidedown", "zoomin", "wipeleft", "pixelize", "hlwind"],
     }
-    return zooms.get(intensity, zooms["Medium Motion"])
+    transitions = transition_sets.get(style, ["fade"])
+    return transitions[index % len(transitions)]
+
+def get_zoom_filter(intensity: str, width: int, height: int, movement: str = "zoomin"):
+    speed_map = {
+        "Low Motion": 0.0005,
+        "Medium Motion": 0.001,
+        "High Motion": 0.0015,
+        "Cinematic": 0.001,
+    }
+    s = speed_map.get(intensity, 0.001)
+    max_zoom = 1.15 if intensity == "Low Motion" else (1.3 if intensity == "High Motion" else 1.2)
+
+    filters = {
+        "zoomin": f"zoompan=z='min(zoom+{s},{max_zoom})':d=125:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height},fps=25",
+        "zoomout": f"zoompan=z='if(lte(zoom,1.0),{max_zoom},max(1.0,zoom-{s}))':d=125:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height},fps=25",
+        "panleft": f"zoompan=z='min(zoom+{s/2},{max_zoom})':d=125:x='if(eq(on,1),iw,iw-(iw-iw/zoom)*on/125)':y='ih/2-(ih/zoom/2)':s={width}x{height},fps=25",
+        "panright": f"zoompan=z='min(zoom+{s/2},{max_zoom})':d=125:x='(iw-iw/zoom)*on/125':y='ih/2-(ih/zoom/2)':s={width}x{height},fps=25",
+        "panup": f"zoompan=z='min(zoom+{s/2},{max_zoom})':d=125:x='iw/2-(iw/zoom/2)':y='(ih-ih/zoom)*on/125':s={width}x{height},fps=25",
+        "pandown": f"zoompan=z='min(zoom+{s/2},{max_zoom})':d=125:x='iw/2-(iw/zoom/2)':y='if(eq(on,1),ih,ih-(ih-ih/zoom)*on/125)':s={width}x{height},fps=25",
+        "diagonal_tl_br": f"zoompan=z='min(zoom+{s},{max_zoom})':d=125:x='(iw-iw/zoom)*on/125':y='(ih-ih/zoom)*on/125':s={width}x{height},fps=25",
+        "diagonal_tr_bl": f"zoompan=z='min(zoom+{s},{max_zoom})':d=125:x='if(eq(on,1),iw,iw-(iw-iw/zoom)*on/125)':y='(ih-ih/zoom)*on/125':s={width}x{height},fps=25",
+    }
+    return filters.get(movement, filters["zoomin"])
 
 def get_style_filter(style: str):
     filters = {
@@ -146,6 +184,13 @@ def generate_captions(audio_path: str, output_dir: str, caption_type: str):
 def root():
     return {"message": "StoryMotion Studio API is running"}
 
+@app.get("/options")
+def get_options():
+    return {
+        "transitions": ALL_TRANSITIONS,
+        "camera_movements": CAMERA_MOVEMENTS,
+    }
+
 @app.post("/upload")
 async def upload_files(
     images: List[UploadFile] = File(...),
@@ -188,7 +233,13 @@ async def upload_files(
         "progress": 0,
     }
 
-    return {"job_id": job_id, "images": saved_images, "audio": audio_path, "music": music_path}
+    return {
+        "job_id": job_id,
+        "images": saved_images,
+        "audio": audio_path,
+        "music": music_path,
+        "image_count": len(saved_images),
+    }
 
 @app.post("/generate/{job_id}")
 def generate(
@@ -198,6 +249,8 @@ def generate(
     aspect_ratio: str = "16:9",
     caption_position: str = "bottom",
     caption_type: str = "sentence",
+    transitions: Optional[str] = None,   # comma separated, per-image override e.g. "fade,wipeleft,zoomin"
+    motions: Optional[str] = None,       # comma separated, per-image camera movement override
 ):
     if job_id not in jobs:
         return {"error": "Job not found"}
@@ -220,6 +273,10 @@ def generate(
         "Cinematic": 5,
     }
     duration = durations.get(intensity, 4)
+
+    # Parse per-image overrides
+    transition_list = [t.strip() for t in transitions.split(",")] if transitions else None
+    motion_list = [m.strip() for m in motions.split(",")] if motions else None
 
     try:
         # Step 1 — Resize images
@@ -258,16 +315,24 @@ def generate(
         if audio_path:
             srt_path = generate_captions(audio_path, output_dir, caption_type)
 
-        # Step 4 — Create clips with zoom + style filter
+        # Step 4 — Create clips with per-image camera movement + style filter
         jobs[job_id]["progress"] = 50
         clips_dir = f"uploads/{job_id}/clips"
         os.makedirs(clips_dir, exist_ok=True)
-        zoom_filter = get_zoom_filter(intensity, width, height)
         style_filter = get_style_filter(style)
-        combined_filter = f"{zoom_filter},{style_filter}"
 
         for i in range(len(images)):
             clip_path = f"{clips_dir}/{i:04d}.mp4"
+
+            # Determine camera movement for this image
+            if motion_list and i < len(motion_list) and motion_list[i] in CAMERA_MOVEMENTS:
+                movement = motion_list[i]
+            else:
+                movement = CAMERA_MOVEMENTS[i % len(CAMERA_MOVEMENTS)]
+
+            zoom_filter = get_zoom_filter(intensity, width, height, movement=movement)
+            combined_filter = f"{zoom_filter},{style_filter}"
+
             subprocess.run([
                 "ffmpeg", "-y",
                 "-loop", "1",
@@ -279,12 +344,11 @@ def generate(
                 clip_path
             ], check=True, capture_output=True)
 
-        # Step 5 — Concatenate with transitions
+        # Step 5 — Concatenate with per-image transitions
         jobs[job_id]["progress"] = 65
         if len(images) == 1:
             concat_video = f"{clips_dir}/0000.mp4"
         else:
-            transition = get_transition(style)
             transition_duration = 0.5
             filter_parts = []
             prev = "[0:v]"
@@ -293,6 +357,13 @@ def generate(
                 offset = (duration * i) - (transition_duration * i)
                 curr = f"[{i}:v]"
                 out = f"[v{i}]" if i < len(images) - 1 else "[vout]"
+
+                # Determine transition for this junction
+                if transition_list and (i - 1) < len(transition_list) and transition_list[i - 1] in ALL_TRANSITIONS:
+                    transition = transition_list[i - 1]
+                else:
+                    transition = get_transition(style, i - 1)
+
                 filter_parts.append(
                     f"{prev}{curr}xfade=transition={transition}:duration={transition_duration}:offset={offset}{out}"
                 )
@@ -614,7 +685,7 @@ def create_progress_bar(
         height=height,
     )
     jobs[job_id] = {"status": "done", "output": output_path}
-    return {"job_id": job_id, "status": "done"}        
+    return {"job_id": job_id, "status": "done"}
 
 @app.post("/ai/script")
 def create_script(
@@ -646,7 +717,6 @@ def run_ai_generate(job_id, topic, style, duration, aspect_ratio):
         output_dir = f"outputs/{job_id}"
         os.makedirs(output_dir, exist_ok=True)
 
-        # Step 1 — Generate script
         script = generate_script(topic=topic, style=style, duration=duration)
         scenes = script.get("scenes", [])
         clip_paths = []
@@ -656,7 +726,6 @@ def run_ai_generate(job_id, topic, style, duration, aspect_ratio):
 
         total_scenes = len(scenes)
 
-        # Step 2 — Generate each scene
         for i, scene in enumerate(scenes):
             clip_path = f"{output_dir}/scene_{i:04d}.mp4"
             asset_type = scene.get("asset_type", "graphic")
@@ -667,14 +736,13 @@ def run_ai_generate(job_id, topic, style, duration, aspect_ratio):
             jobs[job_id]["progress"] = 15 + int((i / max(total_scenes, 1)) * 70)
 
             if asset_type == "image":
-                # Generate AI image for this scene
                 img_path = f"{output_dir}/scene_{i:04d}.png"
                 visual_prompt = scene.get("visual", scene.get("narration", topic))
                 result = generate_image(visual_prompt, img_path, style=style)
 
                 if result and os.path.exists(img_path):
-                    # Resize and apply zoom + style filter
-                    zoom_filter = get_zoom_filter("Medium Motion", width, height)
+                    movement = CAMERA_MOVEMENTS[i % len(CAMERA_MOVEMENTS)]
+                    zoom_filter = get_zoom_filter("Medium Motion", width, height, movement=movement)
                     style_filter = get_style_filter(style)
                     subprocess.run([
                         "ffmpeg", "-y",
@@ -687,7 +755,6 @@ def run_ai_generate(job_id, topic, style, duration, aspect_ratio):
                         clip_path
                     ], check=True, capture_output=True)
                 else:
-                    # Fallback to text overlay if image generation fails
                     draw_text_overlay(
                         output_path=clip_path,
                         lines=[scene.get("visual", "Scene")],
@@ -791,7 +858,6 @@ def run_ai_generate(job_id, topic, style, duration, aspect_ratio):
 
         jobs[job_id]["progress"] = 88
 
-        # Step 3 — Concatenate all scenes
         if len(clip_paths) == 1:
             concat_video = clip_paths[0]
         else:
@@ -813,7 +879,6 @@ def run_ai_generate(job_id, topic, style, duration, aspect_ratio):
 
         jobs[job_id]["progress"] = 95
 
-        # Step 4 — Add narration voice if needed (TTS) — skipped for now, silent video
         final_video = f"{output_dir}/video.mp4"
         shutil.copy(concat_video, final_video)
 
